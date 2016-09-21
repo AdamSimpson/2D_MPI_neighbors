@@ -5,13 +5,15 @@
 
 /*
 Preform 2D neighbor MPI send/recv
-______________
- 0 |  1 | 2  |
-______________
- 3 |  4 |  5 |
-______________
- 6 |  7 |  8 |
-_______________
+
+ranks layed out in following order:
+____________
+ 0 | 1 | 2 |
+____________
+ 3 | 4 | 5 |
+____________
+ 6 | 7 | 8 |
+____________
 */
 
 int main(int argc, char **argv)
@@ -24,8 +26,10 @@ int main(int argc, char **argv)
 
     // Assume layout is square
     int lin_dim = sqrt(size);
-    if(lin_dim*lin_dim != size)
-        return -1;
+    if(lin_dim*lin_dim != size) {
+      printf("MPI size must be perfect square");
+        return(EXIT_FAILURE);
+    }
 
     // Define neighbors
     // upper left/middle/right
@@ -90,17 +94,18 @@ int main(int argc, char **argv)
     neighbors[7] = lr;
 
     // Allocate send/recv buffers
-    char *send_buffs[8];
-    char *recv_buffs[8];
-    int count = 1;
-    size_t size_buff = count*sizeof(char);
+    // Send buffers contain the sending rank
+    int *send_buffs[8];
+    int *recv_buffs[8];
+    int count = 1000;
+    size_t size_buff = count*sizeof(int);
     int i, j;
     for(i=0; i<8; i++) {
         send_buffs[i] = malloc(size_buff);
         recv_buffs[i] = malloc(size_buff);
         for(j=0; j<count; j++) {
-            send_buffs[i][j] = 8;
-            recv_buffs[i][j] = 1;
+            send_buffs[i][j] = rank;
+            recv_buffs[i][j] = -1;
         }
     }
 
@@ -114,17 +119,42 @@ int main(int argc, char **argv)
     start = MPI_Wtime();
 
     int k,l;
-
-    for(j=0; j<10000; j++)
-    {
+    for(k=0; k<100; k++) {
+        int err;
         // Post Recvs from all neighbors
-        for(i=0; i<8; i++)
-            MPI_Irecv(recv_buffs[i], count, MPI_CHAR, neighbors[i], j, MPI_COMM_WORLD, &recv_requests[i]);    
+        for(i=0; i<8; i++) {
+            err = MPI_Irecv(recv_buffs[i], count, MPI_INT, neighbors[i], j, MPI_COMM_WORLD, &recv_requests[i]);
+            if(err != MPI_SUCCESS) {
+              printf("ERROR: MPI_IRecv error %d", err);
+            }
+        }
+
         // Initiate Send to all  neighbors
-        for(i=0; i<8; i++)
-            MPI_Isend(send_buffs[i], count, MPI_CHAR, neighbors[i], j, MPI_COMM_WORLD, &send_requests[i]);
+        for(i=0; i<8; i++) {
+            err = MPI_Isend(send_buffs[i], count, MPI_INT, neighbors[i], j, MPI_COMM_WORLD, &send_requests[i]);
+            if(err != MPI_SUCCESS) {
+              printf("ERROR: MPI_ISend error %d", err);
+            }
+        }
+
         // Wait to complete 
-        MPI_Waitall(8, recv_requests, MPI_STATUSES_IGNORE);   
+        err = MPI_Waitall(8, recv_requests, MPI_STATUSES_IGNORE);   
+        if(err != MPI_SUCCESS) {
+          printf("ERROR: MPI_Waitall error %d", err);
+        }
+
+        // Test that received values are sum of neighboring ranks multiplied by the count
+        int sum=0;
+        for(i=0; i<8; i++) {
+          if(neighbors[i] != MPI_PROC_NULL) {
+            for(j=0; j<count; j++) {
+              if(recv_buffs[i][j] != neighbors[i]) {
+                printf("ERROR: expected %d but received %d\n", neighbors[i], recv_buffs[i][j]);
+                return(EXIT_FAILURE);
+              }
+           }
+         }
+       }
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
