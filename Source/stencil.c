@@ -38,7 +38,7 @@ int main(int argc, char **argv)
     // Assume layout is square
     int lin_dim = sqrt(size);
     if(lin_dim*lin_dim != size) {
-      printf("MPI size must be perfect square");
+      fprintf(stderr, "MPI size must be perfect square");
         exit(EXIT_FAILURE);
     }
 
@@ -147,7 +147,7 @@ int main(int argc, char **argv)
         for(i=0; i<8; i++) {
             err = MPI_Irecv(d_recv_buffs[i], count, MPI_INT, neighbors[i], j, MPI_COMM_WORLD, &recv_requests[i]);
             if(err != MPI_SUCCESS) {
-              printf("ERROR: MPI_IRecv error %d", err);
+              fprintf(stderr, "ERROR: MPI_IRecv error %d", err);
               exit(err);
             }
         }
@@ -156,7 +156,7 @@ int main(int argc, char **argv)
         for(i=0; i<8; i++) {
             err = MPI_Isend(d_send_buffs[i], count, MPI_INT, neighbors[i], j, MPI_COMM_WORLD, &send_requests[i]);
             if(err != MPI_SUCCESS) {
-              printf("ERROR: MPI_ISend error %d", err);
+              fprintf(stderr, "ERROR: MPI_ISend error %d", err);
               exit(err);
             }
         }
@@ -164,7 +164,7 @@ int main(int argc, char **argv)
         // Wait to complete 
         err = MPI_Waitall(8, recv_requests, MPI_STATUSES_IGNORE);   
         if(err != MPI_SUCCESS) {
-          printf("ERROR: MPI_Waitall error %d", err);
+          fprintf(stderr, "ERROR: MPI_Waitall error %d", err);
           exit(err);
         }
 
@@ -176,7 +176,7 @@ int main(int argc, char **argv)
             gpuErrchk( d_err );
             for(j=0; j<count; j++) {
               if(recv_buffs[i][j] != neighbors[i]) {
-                printf("ERROR: expected %d but received %d\n", neighbors[i], recv_buffs[i][j]);
+                fprintf(stderr, "ERROR: expected %d but received %d\n", neighbors[i], recv_buffs[i][j]);
                 exit(EXIT_FAILURE);
               }
            }
