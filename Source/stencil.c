@@ -2,6 +2,17 @@
 #include "stdlib.h"
 #include "math.h"
 #include "mpi.h"
+#include "cuda_runtime.h"
+
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+void gpuAssert(cudaError_t code, const char *file, int line)
+{
+   if (code != cudaSuccess)
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      exit(code);
+   }
+}
 
 /*
 Preform 2D neighbor MPI send/recv
@@ -28,7 +39,7 @@ int main(int argc, char **argv)
     int lin_dim = sqrt(size);
     if(lin_dim*lin_dim != size) {
       printf("MPI size must be perfect square");
-        return(EXIT_FAILURE);
+        exit(EXIT_FAILURE);
     }
 
     // Define neighbors
@@ -94,24 +105,35 @@ int main(int argc, char **argv)
     neighbors[7] = lr;
 
     // Allocate send/recv buffers
-    // Send buffers contain the sending rank
+    // Send buffers contain count elements equal to the sending rank
     int *send_buffs[8];
     int *recv_buffs[8];
+    int *d_send_buffs[8];    
+    int *d_recv_buffs[8];
+
     int count = 1000;
     size_t size_buff = count*sizeof(int);
     int i, j;
+    cudaError_t d_err;
     for(i=0; i<8; i++) {
         send_buffs[i] = malloc(size_buff);
         recv_buffs[i] = malloc(size_buff);
+        d_err = cudaMalloc((void**)(d_send_buffs + i), size_buff);
+        gpuErrchk( d_err );
+        d_err = cudaMalloc((void**)(d_recv_buffs + i), size_buff);
+        gpuErrchk( d_err );
         for(j=0; j<count; j++) {
             send_buffs[i][j] = rank;
             recv_buffs[i][j] = -1;
         }
+        d_err = cudaMemcpy(d_send_buffs[i], send_buffs[i], count*sizeof(int), cudaMemcpyHostToDevice);
+        gpuErrchk( d_err );
+        d_err = cudaMemcpy(d_recv_buffs[i], recv_buffs[i], count*sizeof(int), cudaMemcpyHostToDevice);
+        gpuErrchk( d_err );
     }
 
     MPI_Request send_requests[8];
     MPI_Request recv_requests[8];
-
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -123,17 +145,19 @@ int main(int argc, char **argv)
         int err;
         // Post Recvs from all neighbors
         for(i=0; i<8; i++) {
-            err = MPI_Irecv(recv_buffs[i], count, MPI_INT, neighbors[i], j, MPI_COMM_WORLD, &recv_requests[i]);
+            err = MPI_Irecv(d_recv_buffs[i], count, MPI_INT, neighbors[i], j, MPI_COMM_WORLD, &recv_requests[i]);
             if(err != MPI_SUCCESS) {
               printf("ERROR: MPI_IRecv error %d", err);
+              exit(err);
             }
         }
 
         // Initiate Send to all  neighbors
         for(i=0; i<8; i++) {
-            err = MPI_Isend(send_buffs[i], count, MPI_INT, neighbors[i], j, MPI_COMM_WORLD, &send_requests[i]);
+            err = MPI_Isend(d_send_buffs[i], count, MPI_INT, neighbors[i], j, MPI_COMM_WORLD, &send_requests[i]);
             if(err != MPI_SUCCESS) {
               printf("ERROR: MPI_ISend error %d", err);
+              exit(err);
             }
         }
 
@@ -141,16 +165,19 @@ int main(int argc, char **argv)
         err = MPI_Waitall(8, recv_requests, MPI_STATUSES_IGNORE);   
         if(err != MPI_SUCCESS) {
           printf("ERROR: MPI_Waitall error %d", err);
+          exit(err);
         }
 
         // Test that received values are sum of neighboring ranks multiplied by the count
         int sum=0;
         for(i=0; i<8; i++) {
           if(neighbors[i] != MPI_PROC_NULL) {
+            d_err = cudaMemcpy(recv_buffs[i], d_recv_buffs[i], count*sizeof(int), cudaMemcpyDeviceToHost);
+            gpuErrchk( d_err );
             for(j=0; j<count; j++) {
               if(recv_buffs[i][j] != neighbors[i]) {
                 printf("ERROR: expected %d but received %d\n", neighbors[i], recv_buffs[i][j]);
-                return(EXIT_FAILURE);
+                exit(EXIT_FAILURE);
               }
            }
          }

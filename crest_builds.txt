@@ -1,0 +1,31 @@
+To run:
+mpirun -gpu -n 4 ./2D_stencil 
+
+// GCC
+module load spectrum_mpi
+module load cmake
+mkdir build
+cd build
+cmake ..
+make
+
+// XL
+module load spectrum_mpi
+module load cmake
+module load xl
+mkdir build
+cd build
+CC=xlc cmake ..
+make
+
+// Clang
+module load spectrum_mpi
+module load cmake
+module load xl
+mkdir build
+cd build
+CC=clang cmake ..
+make
+
+// PGI
+Doesn't work with cuda
