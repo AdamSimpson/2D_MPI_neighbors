@@ -111,7 +111,7 @@ int main(int argc, char **argv)
     int *d_send_buffs[8];    
     int *d_recv_buffs[8];
 
-    int count = 1000;
+    int count = 200000;
     size_t size_buff = count*sizeof(int);
     int i, j;
     cudaError_t d_err;
@@ -167,6 +167,11 @@ int main(int argc, char **argv)
           fprintf(stderr, "ERROR: MPI_Waitall error %d", err);
           exit(err);
         }
+        err = MPI_Waitall(8, send_requests, MPI_STATUSES_IGNORE);   
+        if(err != MPI_SUCCESS) {
+          fprintf(stderr, "ERROR: MPI_Waitall error %d", err);
+          exit(err);
+        }
 
         // Test that received values are sum of neighboring ranks multiplied by the count
         int sum=0;
@@ -189,6 +194,13 @@ int main(int argc, char **argv)
 
     if(rank==0)
         printf("Total comm time: %f seconds\n", end-start);
+
+     for(i=0; i<8; i++) {
+         free(send_buffs[i]);
+         free(recv_buffs[i]);
+         cudaFree(d_send_buffs[i]);
+         cudaFree(d_recv_buffs[i]);
+     }
 
     MPI_Finalize();
     return 0;
